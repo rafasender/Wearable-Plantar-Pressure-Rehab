@@ -35,7 +35,10 @@ The system supports physiotherapists in tracking the **rehabilitation progress o
 
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload
+set DATABASE_URL=postgresql://postgres:1809@localhost:5432/gaitvision (PowerShell: `$env:DATABASE_URL = "postgresql://postgres:1809@localhost:5432/gaitvision"`)
+alembic upgrade head
+set ARDUINO_PORT=<porta_do_arduino> (PowerShell: `$env:ARDUINO_PORT = "COM5"`)
+uvicorn main:app
 
 ### 2. Frontend
 
@@ -56,6 +59,38 @@ npm run dev
 - Data acquisition via Arduino (serial communication)
 
 - Designed for physiotherapy and post-stroke rehabilitation
+
+- Session history per patient with automatic comparison between sessions
+
+---
+
+## 🗂️ Sessões de Pacientes
+
+- Cadastre um paciente diretamente no painel superior do frontend.
+- Inicie uma sessão para o paciente selecionado e deixe o sistema coletar automaticamente cada leitura de pressão.
+- Encerre a sessão para consolidar os dados. O histórico lista todas as sessões com amostras, duração, notas e médias por região do pé.
+- Compare a sessão atual com a anterior para observar tendências de melhora ou piora nas regiões (calcanhar, meio-pé, ponta).
+
+### 🔐 Fluxo do Fisioterapeuta
+
+1. Acesse `/login`, informe email/senha (mock local) e será redirecionado para `/home`.
+2. No painel, cadastre ou selecione um paciente, escreva observações e clique em **Iniciar sessão**.
+3. A página `/session/:id` exibe dados do paciente, cronologia da sessão e o mapa de calor em tempo real.
+4. Clique em **Finalizar sessão** para encerrar o registro e voltar ao painel.
+
+### API de Sessões
+
+Endpoint | Método | Descrição
+-------- | ------ | ---------
+`/patients` | GET / POST | Lista ou cria pacientes (nome obrigatório).
+`/patients/{patient_id}/sessions` | GET / POST | Lista sessões do paciente ou abre uma nova sessão (opcionalmente com nota).
+`/sessions/{session_id}/data` | POST | Registra uma leitura de pressão para a sessão ativa (chamado automaticamente pelo frontend a cada amostra).
+`/sessions/{session_id}/end` | POST | Encerra a sessão em andamento e marca horário de término.
+`/sessions/{session_id}` | GET | Retorna detalhes completos de uma sessão, incluindo todas as amostras coletadas.
+
+Os dados são persistidos em `backend/session_data.json`, permitindo comparar sessões ao longo do tempo.
+
+> ⚠️ Se o backend exibir `Erro no loop serial: could not open port 'COMX'`, abra o Gerenciador de Dispositivos, identifique a porta correta do Arduino e exporte `ARDUINO_PORT` antes de iniciar o FastAPI.
 
 ### Authors
 

@@ -20,3 +20,4 @@ Thumbs.db
 
 # Outros arquivos temporários
 *.log
+backend/session_data.json
