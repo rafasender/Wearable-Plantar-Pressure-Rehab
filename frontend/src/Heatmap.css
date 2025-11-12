@@ -15,7 +15,7 @@
   left: 0;
   display: block;
   border: none;
-  background: transparent;
+  background: whitesmoke;
   mask-image: url('/pepbl.png');
   -webkit-mask-image: url('/pepbl.png');
   mask-size: contain;
@@ -39,6 +39,8 @@
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
+  mix-blend-mode: multiply;
+  opacity: 0.85;
   /* Garante que cliques/mouse "atravessem" o contorno */
   pointer-events: none; 
   /* Garante que o contorno fique por cima do heatmap */

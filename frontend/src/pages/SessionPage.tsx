@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import PlantarPressureCharts from "../components/PlantarPressureCharts";
 import FootHeatmap from "../FootHeatmap";
 import { Patient, Pressao, SessionDetail } from "../types";
 import {
@@ -22,6 +23,24 @@ const SENSOR_COORDS: Record<string, { x: number; y: number }> = {
 };
 
 const COP_THRESHOLD = 5;
+type RegionKey = "antepe" | "mediape" | "calcanhar";
+const REGION_SENSORS: Record<RegionKey, string[]> = {
+  antepe: ["fsr0", "fsr1"],
+  mediape: ["fsr2", "fsr3"],
+  calcanhar: ["fsr4", "fsr5", "fsr6"],
+};
+const REGION_LABELS: Record<RegionKey, string> = {
+  antepe: "Antepe",
+  mediape: "Medio pe",
+  calcanhar: "Calcanhar",
+};
+const MAX_HISTORY_POINTS = 120;
+
+type PressureSnapshot = {
+  timestamp: number;
+  total: number;
+  regions: Record<RegionKey, number>;
+};
 
 const voltsToKpa = (v: number) => 100 * Math.pow(Math.max(v, 0), 1.5);
 
@@ -35,9 +54,16 @@ const SessionPage: React.FC = () => {
   const [pressao, setPressao] = useState<Pressao | null>(null);
   const [cop, setCop] = useState<{ x: number; y: number } | null>(null);
   const [maxKpa, setMaxKpa] = useState(0);
+  const [regionBreakdown, setRegionBreakdown] = useState<Record<RegionKey, number>>({
+    antepe: 0,
+    mediape: 0,
+    calcanhar: 0,
+  });
+  const [pressureHistory, setPressureHistory] = useState<PressureSnapshot[]>([]);
   const [isEnding, setIsEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const savingRef = useRef(false);
+  const hydratingHistoryRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -84,7 +110,7 @@ const SessionPage: React.FC = () => {
     let highest = 0;
     let weightedX = 0;
     let weightedY = 0;
-    let total = 0;
+    let copWeight = 0;
 
     for (const key of SENSOR_KEYS) {
       const value = pressao[key] ?? 0;
@@ -94,17 +120,54 @@ const SessionPage: React.FC = () => {
         const coords = SENSOR_COORDS[key];
         weightedX += coords.x * kpa;
         weightedY += coords.y * kpa;
-        total += kpa;
+        copWeight += kpa;
       }
     }
 
-    setMaxKpa(highest);
-    if (total > 0) {
-      setCop({ x: weightedX / total, y: weightedY / total });
+    const summaryMax = session?.max_pressure_kpa ?? 0;
+    setMaxKpa(Math.max(summaryMax, highest));
+    if (copWeight > 0) {
+      setCop({ x: weightedX / copWeight, y: weightedY / copWeight });
     } else {
       setCop(null);
     }
-  }, [pressao]);
+    const snapshot = snapshotFromPressures(pressao, Date.now());
+    setRegionBreakdown(snapshot.regions);
+
+    if (hydratingHistoryRef.current) {
+      hydratingHistoryRef.current = false;
+      return;
+    }
+
+    setPressureHistory((prev) => {
+      const next = [...prev, snapshot];
+      return next.length > MAX_HISTORY_POINTS ? next.slice(next.length - MAX_HISTORY_POINTS) : next;
+    });
+  }, [pressao, session?.max_pressure_kpa]);
+
+  useEffect(() => {
+    if (!session?.samples || session.samples.length === 0) return;
+    const snapshots = session.samples
+      .map((sample) => snapshotFromPressures(sample.pressures, new Date(sample.timestamp).getTime()))
+      .slice(-MAX_HISTORY_POINTS);
+    const lastSnapshot = snapshots[snapshots.length - 1];
+    const lastSample = session.samples[session.samples.length - 1];
+
+    hydratingHistoryRef.current = true;
+    setPressureHistory(snapshots);
+    if (lastSnapshot) {
+      setRegionBreakdown(lastSnapshot.regions);
+    }
+    if (lastSample) {
+      setPressao(lastSample.pressures);
+    }
+    const storedMax = session.samples.reduce(
+      (maxValue, sample) => Math.max(maxValue, calculateMaxPressure(sample.pressures)),
+      0,
+    );
+    setMaxKpa(Math.max(storedMax, session.max_pressure_kpa ?? 0));
+  }, [session?.samples, session?.max_pressure_kpa]);
+
 
   const handleEndSession = async () => {
     if (!sessionId) return;
@@ -233,9 +296,48 @@ const SessionPage: React.FC = () => {
             </div>
           </div>
         </section>
+
+        <PlantarPressureCharts
+          history={pressureHistory}
+          regionLabels={REGION_LABELS}
+          currentRegions={regionBreakdown}
+        />
       </main>
     </div>
   );
 };
 
 export default SessionPage;
+
+function snapshotFromPressures(pressures: Pressao, timestamp: number): PressureSnapshot {
+  return {
+    timestamp,
+    total: calculateTotalPressure(pressures),
+    regions: calculateRegionAverages(pressures),
+  };
+}
+
+function calculateTotalPressure(pressures: Pressao): number {
+  return SENSOR_KEYS.reduce((acc, key) => acc + voltsToKpa(pressures[key] ?? 0), 0);
+}
+
+function calculateMaxPressure(pressures: Pressao): number {
+  return SENSOR_KEYS.reduce((highest, key) => Math.max(highest, voltsToKpa(pressures[key] ?? 0)), 0);
+}
+
+function calculateRegionAverages(pressao: Pressao): Record<RegionKey, number> {
+  const result: Record<RegionKey, number> = {
+    antepe: 0,
+    mediape: 0,
+    calcanhar: 0,
+  };
+
+  for (const region of Object.keys(REGION_SENSORS) as RegionKey[]) {
+    const sensors = REGION_SENSORS[region];
+    if (!sensors.length) continue;
+    const sum = sensors.reduce((acc, key) => acc + voltsToKpa(pressao[key] ?? 0), 0);
+    result[region] = sum / sensors.length;
+  }
+
+  return result;
+}

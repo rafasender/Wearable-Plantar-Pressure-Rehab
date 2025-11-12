@@ -88,7 +88,7 @@ Endpoint | Método | Descrição
 `/sessions/{session_id}/end` | POST | Encerra a sessão em andamento e marca horário de término.
 `/sessions/{session_id}` | GET | Retorna detalhes completos de uma sessão, incluindo todas as amostras coletadas.
 
-Os dados são persistidos em `backend/session_data.json`, permitindo comparar sessões ao longo do tempo.
+Os dados são persistidos no PostgreSQL (`sessions` e `pressure_samples`), permitindo comparar sessões ao longo do tempo mesmo após reiniciar o sistema.
 
 > ⚠️ Se o backend exibir `Erro no loop serial: could not open port 'COMX'`, abra o Gerenciador de Dispositivos, identifique a porta correta do Arduino e exporte `ARDUINO_PORT` antes de iniciar o FastAPI.
 
